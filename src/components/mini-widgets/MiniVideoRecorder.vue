@@ -209,7 +209,7 @@ const startRecording = async (): Promise<SweetAlertResult | void> => {
   }
 
   mediaRecorder.value.onstop = () => {
-    const blob = new Blob(chunks, { type: 'video/webm' })
+    const blob = new Blob(chunks, { type: 'video/webm;codecs=vp9' })
     const videoTelemetryLog = datalogger.getSlice(datalogger.currentCockpitLog, timeRecordingStart.value, new Date())
     const assLog = datalogger.toAssOverlay(videoTelemetryLog, vWidth, vHeight, timeRecordingStart.value.getTime())
     var logBlob = new Blob([assLog], { type: 'text/plain' })
