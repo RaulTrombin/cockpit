@@ -40,7 +40,7 @@ export const useVideoStore = defineStore('video', () => {
         cockpitVideoDB.iterate((_, videoName) => cockpitVideoDB.removeItem(videoName))
       } else if (decision.isConfirmed) {
         cockpitVideoDB.iterate((videoFile, videoName) => {
-          const blob = (videoFile as Blob[]).reduce((a, b) => new Blob([a, b], { type: 'video/webm' }))
+          const blob = (videoFile as Blob[]).reduce((a, b) => new Blob([a, b], { type: 'video/webm;codecs=vp9' }))
           saveAs(blob, videoName)
         })
         cockpitVideoDB.iterate((_, videoName) => cockpitVideoDB.removeItem(videoName))
