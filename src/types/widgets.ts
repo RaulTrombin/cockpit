@@ -16,6 +16,7 @@ export enum WidgetType {
   URLVideoPlayer = 'URLVideoPlayer',
   VideoPlayer = 'VideoPlayer',
   VirtualHorizon = 'VirtualHorizon',
+  PingViewer = 'PingViewer'
 }
 
 /**
