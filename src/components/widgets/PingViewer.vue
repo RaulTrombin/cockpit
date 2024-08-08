@@ -55,30 +55,30 @@ const vsSource = `
 `;
 
 const fsSource = `
-  precision highp float;
-  varying vec2 vTextureCoord;
-  uniform sampler2D uSampler;
+precision highp float;
+varying vec2 vTextureCoord;
+uniform sampler2D uSampler;
 
-  void main(void) {
-    vec2 polar = vTextureCoord;
-    float angle = atan(polar.y - 0.5, polar.x - 0.5) + 3.14159/2.0;
-    float radius = length(polar - 0.5) * 2.0;
-
-    if (polar.x < 0.2 && polar.y < 0.2) {
-      gl_FragColor = texture2D(uSampler, polar*5.0);
-      return;
+void main(void) {
+  vec2 polar = vTextureCoord;
+  float angle = atan(polar.y - 0.5, polar.x - 0.5) + 3.14159/2.0;
+  float radius = length(polar - 0.5) * 2.0;
+    // if (polar.x < 0.2 && polar.y < 0.2) {
+    //   gl_FragColor = texture2D(uSampler, polar*5.0);
+    //   return;
+    // }
+    
+  if (radius > 1.0) {
+    gl_FragColor = vec4(0.1, 0.1, 0.1, 0.0); // Transparent background
+  } else {
+    float texAngle = (angle + 3.14159) / (2.0 * 3.14159);
+    if (texAngle > 1.0) {
+      texAngle -= 1.0;
     }
-    if (radius > 1.0) {
-      gl_FragColor = vec4(0.1, 0.1, 0.1, 1.0);
-    } else {
-      float texAngle = (angle + 3.14159) / (2.0 * 3.14159);
-      if (texAngle > 1.0) {
-        texAngle -= 1.0;
-      }
-      float intensity = texture2D(uSampler, vec2(radius, texAngle)).r;
-      gl_FragColor = vec4(intensity, intensity, intensity, 1.0);
-    }
+    float intensity = texture2D(uSampler, vec2(radius, texAngle)).r;
+    gl_FragColor = vec4(intensity, intensity, intensity, 1.0); // Opaque color
   }
+}
 `;
 
 const initWebGL = () => {
@@ -90,6 +90,10 @@ const initWebGL = () => {
     console.error('Unable to initialize WebGL.');
     return;
   }
+
+  gl.clearColor(0.0, 0.0, 0.0, 0.0); // Set clear color to transparent
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); // Enable alpha blending
 
   shaderProgram = initShaderProgram(gl, vsSource, fsSource);
   setupBuffers();
@@ -204,7 +208,6 @@ const updateTexture = () => {
 const render = () => {
   if (!gl || !shaderProgram) return;
 
-  gl.clearColor(0.0, 0.0, 0.0, 1.0);
   gl.clear(gl.COLOR_BUFFER_BIT);
 
   gl.useProgram(shaderProgram);
@@ -338,7 +341,6 @@ onUnmounted(() => {
 <style scoped>
 .resizable-container {
   width: 100%;
-  /* height: 100%; */
   aspect-ratio: 1 / 1;
   display: flex;
   justify-content: center;
@@ -349,7 +351,7 @@ onUnmounted(() => {
 .webgl-canvas {
   width: 100%;
   height: 100%;
-  background-color: #007bff;
+  background-color: #007bff00;
 }
 
 .controls {
