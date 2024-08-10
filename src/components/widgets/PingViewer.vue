@@ -1,37 +1,42 @@
 <template>
   <div class="resizable-container">
     <div id="menu-icon" class="menu-icon" @click="toggleControls">
-      ☰ <!-- You can replace this with an actual icon -->
+      ☰
     </div>
     <div v-if="showControls" id="controls" class="controls">
-      <input
-        id="deviceNumber"
-        type="text"
-        v-model="deviceNumber"
-        placeholder="Enter device number"
-      />
-      <input
-        id="hostAddress"
-        type="text"
-        v-model="hostAddress"
-        placeholder="Enter host address"
-      />
-      <button @click="connectWebSocket">Connect</button>
-      <button @click="fakeWebSocket">Fake it</button>
+      <div v-if="!isConnected">
+        <input
+          id="hostAddress"
+          type="text"
+          v-model="hostAddress"
+          placeholder="Enter host address"
+        />
+        <button @click="listDevices">List Devices</button>
+        <select v-if="availableDevices.length > 0" v-model="selectedDevice">
+          <option v-for="device in availableDevices" :value="device.id">
+            {{ device.id }}
+          </option>
+        </select>
+        <button @click="connectWebSocket">Connect</button>
+      </div>
+      <div v-else>
+        <button @click="disconnectWebSocket">Disconnect</button>
+      </div>
     </div>
     <canvas ref="canvas" class="webgl-canvas"></canvas>
   </div>
 </template>
 
-
-
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick } from 'vue';
 
 const canvas = ref<HTMLCanvasElement | null>(null);
-const deviceNumber = ref('00000000-0000-0000-001e-10da679f8cee');
+const showControls = ref(false);
+// const availableDevices = ref<{ id: string, source: { UdpStream: { ip: string, port: number } } }[]>([]);
+const availableDevices = ref<{ id: string, source: { UdpStream: { ip: string, port: number } } }[]>([]);
+const selectedDevice = ref('');
+let isConnected = ref(false);
 const hostAddress = ref(window.location.host);
-const showControls = ref(false); // Track whether controls are visible
 
 let gl: WebGLRenderingContext | null = null;
 let shaderProgram: WebGLProgram | null = null;
@@ -63,11 +68,7 @@ void main(void) {
   vec2 polar = vTextureCoord;
   float angle = atan(polar.y - 0.5, polar.x - 0.5) + 3.14159/2.0;
   float radius = length(polar - 0.5) * 2.0;
-    // if (polar.x < 0.2 && polar.y < 0.2) {
-    //   gl_FragColor = texture2D(uSampler, polar*5.0);
-    //   return;
-    // }
-    
+
   if (radius > 1.0) {
     gl_FragColor = vec4(0.1, 0.1, 0.1, 0.0); // Transparent background
   } else {
@@ -231,17 +232,65 @@ const updateSonarData = (angle: number, newData: Uint8Array) => {
   render();
 };
 
-const connectWebSocket = () => {
-  const deviceNumberValue = deviceNumber.value.trim();
-  const hostAddressValue = hostAddress.value.trim();
-
-  if (!deviceNumberValue) {
-    alert('Please enter a device number.');
-    return;
+const listDevices = () => {
+  if (socket) {
+    socket.close();
   }
 
-  if (!hostAddressValue) {
-    alert('Please enter a host address.');
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const host = hostAddress.value.trim();
+
+  socket = new WebSocket(`${protocol}//${host}/ws`);
+
+  if (socket) {
+    socket.addEventListener('open', () => {
+      console.log('WebSocket connected.');
+      if (socket) {
+        socket.send(JSON.stringify({ command: 'List', module: 'DeviceManager' }));
+      }
+    });
+
+    const initialDeviceInfoReceived = ref(false);
+
+socket.addEventListener('message', (event) => {
+  try {
+    const message = JSON.parse(event.data);
+
+    if (!initialDeviceInfoReceived.value) {
+      if (Array.isArray(message.DeviceInfo)) {
+        availableDevices.value = message.DeviceInfo.filter((device: any) => device.device_type === 'Ping360');
+        console.log("DeviceInfo received:", availableDevices.value);
+        initialDeviceInfoReceived.value = true; // Set flag to true after processing the initial data
+        socket.close()
+        return
+      } else {
+        console.warn('DeviceInfo is not an array or is undefined:', message.DeviceInfo);
+      }
+    } else {
+      // Ignore subsequent messages
+      console.log('Subsequent message received but ignored:', message);
+    }
+
+  } catch (error) {
+    console.error('Error parsing WebSocket message:', error);
+  }
+});
+
+    socket.addEventListener('close', () => {
+      console.log('WebSocket closed.');
+      isConnected.value = false;
+    });
+
+    socket.addEventListener('error', (error) => {
+      console.error('WebSocket error:', error);
+      isConnected.value = false;
+    });
+  }
+};
+
+const connectWebSocket = () => {
+  if (!selectedDevice.value) {
+    alert('Please select a device.');
     return;
   }
 
@@ -250,47 +299,46 @@ const connectWebSocket = () => {
   }
 
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const host = hostAddressValue;
+  const host = hostAddress.value.trim();
 
-  socket = new WebSocket(`${protocol}//${host}/ws?device_number=${deviceNumberValue}`);
+  socket = new WebSocket(`${protocol}//${host}/ws?device_number=${selectedDevice.value}`);
 
-  socket.addEventListener('open', () => {
-    console.log('WebSocket connected.');
-  });
+  if (socket) {
+    socket.addEventListener('open', () => {
+      console.log('WebSocket connected.');
+      isConnected.value = true;
+    });
 
-  socket.addEventListener('message', (event) => {
-    const message = JSON.parse(event.data);
-    const deviceData = message.DeviceMessage.PingMessage.Ping360.DeviceData;
-    const angle = deviceData.angle;
-    const newIntensityData = deviceData.data.map((value: any) => value);
-    if (angle - lastAngle > 1) {
-      console.log('Angle jump detected:', lastAngle, angle);
-    }
-    lastAngle = angle;
-    console.log('Received sonar data at angle:', angle);
-    updateSonarData(angle, newIntensityData);
-  });
+    socket.addEventListener('message', (event) => {
+      const message = JSON.parse(event.data);
+      const deviceData = message.DeviceMessage.PingMessage.Ping360.DeviceData;
+      const angle = deviceData.angle;
+      const newIntensityData = deviceData.data.map((value: any) => value);
+      if (angle - lastAngle > 1) {
+        console.log('Angle jump detected:', lastAngle, angle);
+      }
+      lastAngle = angle;
+      console.log('Received sonar data at angle:', angle);
+      updateSonarData(angle, newIntensityData);
+    });
 
-  socket.addEventListener('close', () => {
-    console.log('WebSocket closed.');
-  });
+    socket.addEventListener('close', () => {
+      console.log('WebSocket closed.');
+      isConnected.value = false;
+    });
 
-  socket.addEventListener('error', (error) => {
-    console.error('WebSocket error:', error);
-  });
+    socket.addEventListener('error', (error) => {
+      console.error('WebSocket error:', error);
+      isConnected.value = false;
+    });
+  }
 };
 
-const fakeWebSocket = () => {
-  setInterval(() => {
-    const angle = (lastAngle + 1) % 400;
-    lastAngle = angle;
-    const newData = new Uint8Array(LINE_LENGTH);
-    for (let i = 0; i < LINE_LENGTH; i++) {
-      newData[i] = 0;
-    }
-    newData[angle % LINE_LENGTH] = 255; // Ensure the index is within bounds
-    updateSonarData(angle, newData);
-  }, 20);
+const disconnectWebSocket = () => {
+  if (socket) {
+    socket.close();
+    isConnected.value = false;
+  }
 };
 
 const resizeCanvas = () => {
@@ -335,8 +383,6 @@ onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside);
 });
 </script>
-
-
 
 <style scoped>
 .resizable-container {
