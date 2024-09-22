@@ -2,7 +2,6 @@ import { useDebounceFn, useStorage, useThrottleFn, useTimestamp } from '@vueuse/
 import { BlobReader, BlobWriter, ZipWriter } from '@zip.js/zip.js'
 import { differenceInSeconds, format } from 'date-fns'
 import { saveAs } from 'file-saver'
-import localforage from 'localforage'
 import { defineStore } from 'pinia'
 import { v4 as uuid } from 'uuid'
 import { computed, ref, watch } from 'vue'
@@ -14,10 +13,10 @@ import { useBlueOsStorage } from '@/composables/settingsSyncer'
 import { useSnackbar } from '@/composables/snackbar'
 import { WebRTCManager } from '@/composables/webRTC'
 import { getIpsInformationFromVehicle } from '@/libs/blueos'
-import { filesystemStorage } from '@/libs/electron/video'
 import { availableCockpitActions, registerActionCallback } from '@/libs/joystick/protocols/cockpit-actions'
 import { datalogger } from '@/libs/sensors-logging'
-import { isElectron, isEqual, sleep } from '@/libs/utils'
+import { isEqual, sleep } from '@/libs/utils'
+import { tempVideoStorage, videoStorage } from '@/libs/videoStorage'
 import { useMainVehicleStore } from '@/stores/mainVehicle'
 import { useMissionStore } from '@/stores/mission'
 import { Alert, AlertLevel } from '@/types/alert'
@@ -35,27 +34,6 @@ import {
 
 import { useAlertStore } from './alert'
 const { showSnackbar } = useSnackbar()
-
-// Used to store chunks of an ongoing recording, that will be merged into a video file when the recording is stopped
-const tempVideoChunksDB = localforage.createInstance({
-  driver: localforage.INDEXEDDB,
-  name: 'Cockpit - Temporary Video',
-  storeName: 'cockpit-temp-video-db',
-  version: 1.0,
-  description: 'Database for storing the chunks of an ongoing recording, to be merged afterwards.',
-})
-
-// Offer download of backuped videos
-const videoStoringDB = localforage.createInstance({
-  driver: localforage.INDEXEDDB,
-  name: 'Cockpit - Video Recovery',
-  storeName: 'cockpit-video-recovery-db',
-  version: 1.0,
-  description: 'Local backups of Cockpit video recordings to be retrieved in case of failure.',
-})
-// Modify the storage initialization to use filesystem storage in Electron
-const videoStorage = isElectron() ? filesystemStorage : videoStoringDB
-const tempVideoStorage = isElectron() ? filesystemStorage : tempVideoChunksDB
 
 export const useVideoStore = defineStore('video', () => {
   const missionStore = useMissionStore()
