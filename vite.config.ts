@@ -4,18 +4,19 @@ import electron from 'vite-plugin-electron'
 import { VitePWA } from 'vite-plugin-pwa'
 import vuetify from 'vite-plugin-vuetify'
 
+const path = require('path') // eslint-disable-line @typescript-eslint/no-var-requires
+
 // Determine if the build is for Electron based on an environment variable
 const isElectron = process.env.BUILD_TARGET === 'electron'
 
-const path = require('path') // eslint-disable-line @typescript-eslint/no-var-requires
-
 export default defineConfig({
   plugins: [
-    electron({
-      main: {
-        entry: 'electron/main.ts',
-      },
-    }).filter((configuration) => configuration.apply === 'build'),
+    isElectron &&
+      electron({
+        main: {
+          entry: 'electron/main.ts',
+        },
+      }),
     vue(),
     vuetify({
       autoImport: true,
@@ -27,7 +28,7 @@ export default defineConfig({
       },
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
     }),
-  ],
+  ].filter(Boolean),
   define: { 'process.env': {} },
   resolve: {
     alias: {
