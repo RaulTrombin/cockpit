@@ -1,6 +1,12 @@
 import { differenceInMilliseconds } from 'date-fns'
 import { unit } from 'mathjs'
 
+import {
+  createDataLakeVariable,
+  DataLakeVariable,
+  getDataLakeVariableInfo,
+  setDataLakeVariableData,
+} from '@/libs/actions/data-lake'
 import { sendMavlinkMessage } from '@/libs/communication/mavlink'
 import type { MAVLinkMessageDictionary, Package, Type } from '@/libs/connection/m2r/messages/mavlink2rest'
 import {
@@ -45,6 +51,7 @@ import type { MetadataFile } from '@/types/ardupilot-metadata'
 import { type MissionLoadingCallback, type Waypoint, defaultLoadingCallback } from '@/types/mission'
 
 import * as Vehicle from '../vehicle'
+import { flattenData } from './data-flattener'
 import { defaultMessageFrequency } from './defaults'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -82,7 +89,8 @@ export abstract class ArduPilotVehicle<Modes> extends Vehicle.AbstractVehicle<Mo
 
   _messages: MAVLinkMessageDictionary = new Map()
 
-  onMAVLinkMessage = new SignalTyped()
+  onIncomingMAVLinkMessage = new SignalTyped()
+  onOutgoingMAVLinkMessage = new SignalTyped()
   _flying = false
 
   protected currentSystemId = 1
@@ -271,10 +279,30 @@ export abstract class ArduPilotVehicle<Modes> extends Vehicle.AbstractVehicle<Mo
   }
 
   /**
+   * Log outgoing messages
+   * @param {Uint8Array} message
+   */
+  onOutgoingMessage(message: Uint8Array): void {
+    const textDecoder = new TextDecoder()
+    let mavlink_message: Package
+    const text_message = textDecoder.decode(message)
+    try {
+      mavlink_message = JSON.parse(text_message) as Package
+      this.onOutgoingMAVLinkMessage.emit_value(mavlink_message.message.type, mavlink_message)
+    } catch (error) {
+      const pattern = /Ok\((\d+)\)/
+      const match = pattern.exec(text_message)
+      if (match) return
+      console.error(`Failed to parse mavlink message: ${text_message}`)
+      return
+    }
+  }
+
+  /**
    *  Decode incoming message
    * @param {Uint8Array} message
    */
-  onMessage(message: Uint8Array): void {
+  onIncomingMessage(message: Uint8Array): void {
     const textDecoder = new TextDecoder()
     let mavlink_message: Package
     const text_message = textDecoder.decode(message)
@@ -292,6 +320,30 @@ export abstract class ArduPilotVehicle<Modes> extends Vehicle.AbstractVehicle<Mo
 
     if (system_id !== this.currentSystemId || component_id !== 1) {
       return
+    }
+
+    const messageType = mavlink_message.message.type
+
+    // Inject variables from the MAVLink messages into the DataLake
+    if (messageType === 'NAMED_VALUE_FLOAT') {
+      // Special handling for NAMED_VALUE_FLOAT messages
+      const name = (mavlink_message.message.name as string[]).join('').replace(/\0/g, '')
+      const path = `${messageType}/${name}`
+      if (getDataLakeVariableInfo(path) === undefined) {
+        createDataLakeVariable(new DataLakeVariable(path, path, 'number'))
+      }
+      setDataLakeVariableData(path, mavlink_message.message.value)
+    } else {
+      // For all other messages, use the flattener
+      const flattened = flattenData(mavlink_message.message)
+      flattened.forEach(({ path, value }) => {
+        if (value === null) return
+        if (typeof value !== 'string' && typeof value !== 'number') return
+        if (getDataLakeVariableInfo(path) === undefined) {
+          createDataLakeVariable(new DataLakeVariable(path, path, typeof value === 'string' ? 'string' : 'number'))
+        }
+        setDataLakeVariableData(path, value)
+      })
     }
 
     // Update our internal messages
@@ -350,7 +402,7 @@ export abstract class ArduPilotVehicle<Modes> extends Vehicle.AbstractVehicle<Mo
 
     // TODO: Maybe create a signal class to deal with MAVLink only
     // Where add will use the template argument type to define the lambda argument type
-    this.onMAVLinkMessage.emit_value(mavlink_message.message.type, mavlink_message)
+    this.onIncomingMAVLinkMessage.emit_value(mavlink_message.message.type, mavlink_message)
 
     if (Object.keys(this._usedGenericVariablesdMessagePaths).includes(mavlink_message.message.type)) {
       this._usedGenericVariablesdMessagePaths[mavlink_message.message.type].forEach((path) => {

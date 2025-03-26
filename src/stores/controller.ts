@@ -12,7 +12,7 @@ import {
 import { useInteractionDialog } from '@/composables/interactionDialog'
 import { useBlueOsStorage } from '@/composables/settingsSyncer'
 import { MavType } from '@/libs/connection/m2r/messages/mavlink2rest-enum'
-import { type JoystickEvent, EventType, joystickManager, JoystickModel } from '@/libs/joystick/manager'
+import { joystickManager, JoystickModel, JoysticksMap, JoystickStateEvent } from '@/libs/joystick/manager'
 import { allAvailableAxes, allAvailableButtons } from '@/libs/joystick/protocols'
 import { CockpitActionsFunction, executeActionCallback } from '@/libs/joystick/protocols/cockpit-actions'
 import { modifierKeyActions, otherAvailableActions } from '@/libs/joystick/protocols/other'
@@ -126,18 +126,19 @@ export const useControllerStore = defineStore('controller', () => {
     updateCallbacks.value.push(callback)
   }
 
-  joystickManager.onJoystickUpdate((event) => processJoystickEvent(event))
+  joystickManager.onJoystickConnectionUpdate((event) => processJoystickConnectionEvent(event))
   joystickManager.onJoystickStateUpdate((event) => processJoystickStateEvent(event))
 
-  const processJoystickEvent = (event: Map<number, Gamepad>): void => {
+  const processJoystickConnectionEvent = (event: JoysticksMap): void => {
     const newMap = new Map(Array.from(event).map(([index, gamepad]) => [index, new Joystick(gamepad)]))
 
     // Add new joysticks
     for (const [index, joystick] of newMap) {
       if (joysticks.value.has(index)) continue
       joystick.model = joystickManager.getModel(joystick.gamepad)
+      const { product_id, vendor_id } = joystickManager.getVidPid(joystick.gamepad)
       joysticks.value.set(index, joystick)
-      console.info(`Joystick ${index} (${joystick.model}) connected.`)
+      console.info(`Joystick ${index} connected. Model: ${joystick.model} // VID: ${vendor_id} // PID: ${product_id}`)
       console.info('Enabling joystick forwarding.')
       enableForwarding.value = true
     }
@@ -173,9 +174,9 @@ export const useControllerStore = defineStore('controller', () => {
 
   const { showDialog } = useInteractionDialog()
 
-  const processJoystickStateEvent = (event: JoystickEvent): void => {
+  const processJoystickStateEvent = (event: JoystickStateEvent): void => {
     const joystick = joysticks.value.get(event.detail.index)
-    if (joystick === undefined || (event.type !== EventType.Axis && event.type !== EventType.Button)) return
+    if (joystick === undefined) return
     joystick.gamepad = event.detail.gamepad
 
     const joystickModel = joystick.model || JoystickModel.Unknown
@@ -383,6 +384,10 @@ export const useControllerStore = defineStore('controller', () => {
     }
   }
 
+  // Track previous button states to detect rising edges (button press transitions)
+  // Format: Map<actionId, wasActive>
+  const previousActionStates = ref<Map<string, boolean>>(new Map())
+
   registerControllerUpdateCallback((joystickState, actionsMapping, activeActions, actionsConfirmRequired) => {
     if (!joystickState || !actionsMapping || !activeActions || !actionsConfirmRequired) {
       return
@@ -390,10 +395,35 @@ export const useControllerStore = defineStore('controller', () => {
 
     actionsToCallFromJoystick.value = []
 
-    const actionsToCallback = activeActions.filter((a) => a.protocol === JoystickProtocol.CockpitAction)
-    Object.values(actionsToCallback).forEach((a) => {
-      const callback = (): void => addActionToCallFromJoystick(a.id as CockpitActionsFunction)
-      slideToConfirm(callback, { command: a.name }, !actionsConfirmRequired[a.id])
+    // Get list of active actions for this joystick state
+    const currentActiveActions = activeActions.filter((action) => action.protocol === JoystickProtocol.CockpitAction)
+
+    // Process each active cockpit action
+    currentActiveActions.forEach((action) => {
+      // Create a unique key for this action
+      const actionStateKey = `action_${action.id}`
+
+      // Check if this action was active in the previous state
+      const wasActive = previousActionStates.value.get(actionStateKey) || false
+
+      // Store current state for next time
+      previousActionStates.value.set(actionStateKey, true)
+
+      // Only trigger action on rising edge (button was just pressed)
+      if (!wasActive) {
+        const callback = (): void => addActionToCallFromJoystick(action.id as CockpitActionsFunction)
+        slideToConfirm(callback, { command: action.name }, !actionsConfirmRequired[action.id])
+      }
+    })
+
+    // Reset inactive actions' states
+    Array.from(previousActionStates.value.keys()).forEach((actionStateKey) => {
+      const actionId = actionStateKey.replace('action_', '')
+      const isCurrentlyActive = currentActiveActions.some((action) => action.id === actionId)
+
+      if (!isCurrentlyActive) {
+        previousActionStates.value.set(actionStateKey, false)
+      }
     })
 
     if (enableForwarding.value) {

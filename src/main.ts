@@ -10,16 +10,23 @@ import * as Sentry from '@sentry/vue'
 import FloatingVue from 'floating-vue'
 import { createPinia } from 'pinia'
 import { createApp } from 'vue'
+import VueDraggableResizable from 'vue-draggable-resizable'
 import VueVirtualScroller from 'vue-virtual-scroller'
 
 import { app_version } from '@/libs/cosmos'
 import eventTracker from '@/libs/external-telemetry/event-tracking'
+import { runMigrations } from '@/utils/migrations'
 
 import App from './App.vue'
+import { setupPredefinedLakeAndActionResources } from './libs/joystick/protocols/predefined-resources'
+import { setupPostPiniaConnections } from './libs/post-pinia-connections'
 import vuetify from './plugins/vuetify'
 import { loadFonts } from './plugins/webfontloader'
 import router from './router'
 import { useOmniscientLoggerStore } from './stores/omniscientLogger'
+
+// Run migrations that are needed for the app to work
+runMigrations()
 
 library.add(fas, far)
 loadFonts()
@@ -47,8 +54,15 @@ if (window.localStorage.getItem('cockpit-enable-usage-statistics-telemetry') && 
 }
 
 app.component('FontAwesomeIcon', FontAwesomeIcon)
+app.component('VueDraggableResizable', VueDraggableResizable)
 app.use(router).use(vuetify).use(createPinia()).use(FloatingVue).use(VueVirtualScroller)
 app.mount('#app')
 
 // Initialize the logger store
 useOmniscientLoggerStore()
+
+// Post-pinia connections setup
+setupPostPiniaConnections()
+
+// Setup predefined data-lake variables, Cockpit actions, transforming functions and action-links
+setupPredefinedLakeAndActionResources()

@@ -19,7 +19,8 @@
     "serve": "vite preview",
     "test:ci": "vitest --coverage --run",
     "test:unit": "vitest",
-    "typecheck": "vue-tsc --noEmit -p tsconfig.vitest.json --composite false"
+    "typecheck": "vue-tsc --noEmit -p tsconfig.vitest.json --composite false",
+    "build:lib": "BUILD_MODE=library vite build"
   },
   "dependencies": {
     "@fortawesome/fontawesome-svg-core": "^6.4.0",
@@ -27,8 +28,8 @@
     "@fortawesome/free-solid-svg-icons": "^6.4.0",
     "@fortawesome/vue-fontawesome": "^3.0.3",
     "@j2only/slide-unlock": "^0.5.5",
-    "@mdi/font": "^7.0.96",
-    "@mdi/js": "^7.2.96",
+    "@mdi/font": "^7.4.47",
+    "@mdi/js": "^7.4.47",
     "@peermetrics/webrtc-stats": "^5.7.1",
     "@sentry/vue": "^8.20.0",
     "@turf/turf": "^7.1.0",
@@ -39,12 +40,14 @@
     "browser-or-node": "^2.0.0",
     "colord": "^2.9.3",
     "date-fns": "^2.29.3",
+    "electron-log": "^5.2.0",
+    "electron-store": "^10.0.0",
+    "electron-updater": "^6.3.9",
     "file-saver": "^2.0.5",
     "floating-vue": "^5.0.3",
     "flowbite": "^2.2.1",
     "flowbite-vue": "^0.1.2",
     "fuse.js": "^7.0.0",
-    "gamepad.js": "^1.0.4",
     "gsap": "^3.11.3",
     "hammerjs": "^2.0.8",
     "haversine-distance": "^1.2.1",
@@ -52,6 +55,7 @@
     "leaflet": "1.9.3",
     "localforage": "^1.10.0",
     "mathjs": "^13.0.3",
+    "monaco-editor": "^0.52.0",
     "pinia": "^2.0.13",
     "posthog-js": "^1.194.3",
     "roboto-fontface": "*",
@@ -62,6 +66,7 @@
     "uuid": "^8.3.2",
     "vue": "^3.4.21",
     "vue-draggable-plus": "^0.2.0-beta.2",
+    "vue-draggable-resizable": "3.0.0",
     "vue-router": "^4.0.14",
     "vue-virtual-scroller": "^2.0.0-beta.8",
     "vue3-slider": "^1.9.0",
@@ -73,6 +78,7 @@
   "devDependencies": {
     "@pinia/testing": "^0.0.12",
     "@rushstack/eslint-patch": "^1.1.0",
+    "@types/electron-store": "^3.2.2",
     "@types/file-saver": "^2.0.5",
     "@types/jsdom": "^16.2.14",
     "@types/leaflet": "^1.9.0",
@@ -131,7 +137,12 @@
       "icon": "public/pwa-512x512.png"
     },
     "win": {
+      "target": "nsis",
       "icon": "public/pwa-512x512.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
     },
     "linux": {
       "icon": "public/pwa-512x512.png"

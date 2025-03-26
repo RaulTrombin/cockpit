@@ -11,7 +11,12 @@
     @click="widgetStore.editingMode && widgetStore.showElementPropsDrawer(miniWidget.hash)"
   >
     <div class="flex flex-row" :class="widgetStore.editingMode ? 'pointer-events-none' : 'pointer-events-auto'">
-      <div class="potentiometer-container w-full" :class="sizeClass" @mousedown="startDrag">
+      <div
+        class="potentiometer-container w-full"
+        :class="sizeClass"
+        @mousedown="startDrag"
+        @click="isEditingValue = false"
+      >
         <div class="potentiometer-scale elevation-5">
           <div
             class="potentiometer-knob"
@@ -24,12 +29,47 @@
           </div>
         </div>
       </div>
+      <p
+        v-if="miniWidget.options.layout?.minValue >= miniWidget.options.layout?.maxValue"
+        class="absolute bg-[#880000] pa-2 text-xs mt-2 -ml-12 border-2 border-white rounded-md z-50"
+      >
+        Min value is larger than Max value
+      </p>
     </div>
-    <div
-      v-if="miniWidget.options.layout?.showValue"
-      class="value-display bg-[#FFFFFF22] border-[#FFFFFF44] border-[1px] rounded-md p-[2px] min-w-9 text-center elevation-1"
-    >
-      {{ Math.round(potentiometerValue) || 0 }}
+    <div v-if="miniWidget.options.layout?.showValue" class="flex" @keydown.esc="finishEditingValue">
+      <div
+        class="value-display bg-[#FFFFFF22] border-[1px] rounded-md p-[2px] min-w-[40px] text-center elevation-1"
+        :class="
+          isEditingValue
+            ? 'pointer-events-auto border-blue-800 bg-[#0000FF11]'
+            : 'cursor-pointer border-[#FFFFFF44] bg-[#FFFFFF22]'
+        "
+      >
+        <div v-if="!isEditingValue" @click="startEditingValue">
+          {{ Math.round(potentiometerValue) || 0 }}
+        </div>
+        <input
+          v-if="isEditingValue"
+          v-model="editableValue"
+          class="bg-transparent border-0 text-center outline-none max-w-[30px]"
+          @keydown.enter="finishEditingValue"
+          @blur="finishEditingValue"
+        />
+      </div>
+      <div class="flex flex-col w-4 h-7 justify-between items-center">
+        <v-icon
+          v-if="!isEditingValue"
+          class="text-white text-[16px] -mt-[2px] ml-2 cursor-pointer opacity-30"
+          @click="addDialValue"
+          >mdi-plus</v-icon
+        >
+        <v-icon
+          v-if="!isEditingValue"
+          class="text-white text-[16px] -mb-1 ml-2 cursor-pointer opacity-30"
+          @click="subtractDialValue"
+          >mdi-minus</v-icon
+        >
+      </div>
     </div>
   </div>
 </template>
@@ -37,12 +77,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, toRefs, watch } from 'vue'
 
-import {
-  deleteCockpitActionVariable,
-  listenCockpitActionVariable,
-  setCockpitActionVariableData,
-  unlistenCockpitActionVariable,
-} from '@/libs/actions/data-lake'
+import { listenDataLakeVariable, setDataLakeVariableData, unlistenDataLakeVariable } from '@/libs/actions/data-lake'
 import { useWidgetManagerStore } from '@/stores/widgetManager'
 import { CustomWidgetElementOptions, CustomWidgetElementType } from '@/types/widgets'
 
@@ -59,6 +94,9 @@ const miniWidget = toRefs(props).miniWidget
 
 const potentiometerValue = ref(0)
 const rotationAngle = ref(-150)
+let listenerId: string | undefined
+const isEditingValue = ref(false)
+const editableValue = ref(String(Math.round(potentiometerValue.value) || 0))
 
 watch(
   () => widgetStore.miniWidgetManagerVars(miniWidget.value.hash).configMenuOpen,
@@ -76,7 +114,7 @@ watch(
 const setDialValue = (value: number | string | undefined): void => {
   let numValue: number
   if (value === undefined || value === null || isNaN(Number(value))) {
-    numValue = miniWidget.value.options.layout?.minValue || 0
+    numValue = Number(miniWidget.value.options.layout?.minValue) || 0
   } else {
     numValue = Number(value)
   }
@@ -84,9 +122,44 @@ const setDialValue = (value: number | string | undefined): void => {
   potentiometerValue.value = numValue
 
   const rotationRange = 300
-  const valueRange = miniWidget.value.options.layout?.maxValue - miniWidget.value.options.layout?.minValue || 1
-  rotationAngle.value = ((numValue - miniWidget.value.options.layout?.minValue) / valueRange) * rotationRange - 150
+  const minVal = Number(miniWidget.value.options.layout?.minValue) || 0
+  const maxVal = Number(miniWidget.value.options.layout?.maxValue) || 100
+  const valueRange = maxVal - minVal
+
+  rotationAngle.value = ((numValue - minVal) / valueRange) * rotationRange - 150
 }
+
+const startListeningDataLakeVariable = (): void => {
+  if (miniWidget.value.options.dataLakeVariable) {
+    listenerId = listenDataLakeVariable(miniWidget.value.options.dataLakeVariable?.name, (value) => {
+      setDialValue(value as number)
+    })
+    const initialValue = widgetStore.getMiniWidgetLastValue(miniWidget.value.hash)
+    setDialValue(initialValue)
+  }
+}
+
+watch(
+  () => miniWidget.value.options.dataLakeVariable?.name,
+  (newVal) => {
+    if (newVal) {
+      startListeningDataLakeVariable()
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  () => [
+    Number(miniWidget.value.options.layout?.minValue) || 0,
+    Number(miniWidget.value.options.layout?.maxValue) || 100,
+  ],
+  ([minVal]) => {
+    potentiometerValue.value = minVal
+    setDialValue(potentiometerValue.value)
+  },
+  { immediate: true }
+)
 
 onMounted(() => {
   if (!miniWidget.value.options || Object.keys(miniWidget.value.options).length === 0) {
@@ -102,16 +175,10 @@ onMounted(() => {
         notchColor: '#303030aa',
       },
       variableType: 'number',
-      actionVariable: undefined,
+      dataLakeVariable: undefined,
     })
   }
-  if (miniWidget.value.options.actionVariable) {
-    listenCockpitActionVariable(miniWidget.value.options.actionVariable?.name, (value) => {
-      setDialValue(value as number)
-    })
-    const initialValue = widgetStore.getMiniWidgetLastValue(miniWidget.value.hash)
-    setDialValue(initialValue)
-  }
+  startListeningDataLakeVariable()
 })
 
 const sizeClass = computed(() => {
@@ -125,50 +192,61 @@ const sizeClass = computed(() => {
   }
 })
 
+let lastMouseAngle = 0
+let lastUnwrappedAngle = 0
+
+const updateDataLakeVariable = (): void => {
+  if (miniWidget.value.options.dataLakeVariable && !widgetStore.editingMode) {
+    const roundedValue = Math.round(potentiometerValue.value)
+    widgetStore.setMiniWidgetLastValue(miniWidget.value.hash, roundedValue)
+    setDataLakeVariableData(miniWidget.value.options.dataLakeVariable.name, roundedValue)
+  }
+}
+
 const startDrag = (event: MouseEvent): void => {
   event.preventDefault()
 
   const target = event.currentTarget as HTMLElement
   const rect = target.getBoundingClientRect()
-
   const centerX = rect.left + rect.width / 2
   const centerY = rect.top + rect.height / 2
 
-  const dxStart = event.clientX - centerX
-  const dyStart = event.clientY - centerY
-  const initialMouseAngle = Math.atan2(dyStart, dxStart) * (180 / Math.PI)
+  const initialMouseAngle = (Math.atan2(event.clientY - centerY, event.clientX - centerX) * 180) / Math.PI
 
-  const initialRotationAngle = rotationAngle.value
+  lastMouseAngle = initialMouseAngle
+  lastUnwrappedAngle = initialMouseAngle
+
+  const initialKnobAngle = rotationAngle.value
+
+  const offsetAngle = initialKnobAngle - initialMouseAngle
 
   const handleDrag = (moveEvent: MouseEvent): void => {
-    const dx = moveEvent.clientX - centerX
-    const dy = moveEvent.clientY - centerY
+    const rawAngle = (Math.atan2(moveEvent.clientY - centerY, moveEvent.clientX - centerX) * 180) / Math.PI
 
-    const currentMouseAngle = Math.atan2(dy, dx) * (180 / Math.PI)
+    let angleDiff = rawAngle - lastMouseAngle
+    if (angleDiff > 180) angleDiff -= 360
+    else if (angleDiff < -180) angleDiff += 360
 
-    let angleDifference = currentMouseAngle - initialMouseAngle
+    const unwrappedAngle = lastUnwrappedAngle + angleDiff
 
-    if (angleDifference > 180) {
-      angleDifference -= 360
-    } else if (angleDifference < -180) {
-      angleDifference += 360
-    }
+    lastMouseAngle = rawAngle
+    lastUnwrappedAngle = unwrappedAngle
 
-    let newRotationAngle = initialRotationAngle + angleDifference
+    let newRotationAngle = unwrappedAngle + offsetAngle
 
     newRotationAngle = Math.max(-150, Math.min(150, newRotationAngle))
 
     rotationAngle.value = newRotationAngle
 
     const rotationRange = 300
-    const valueRange = miniWidget.value.options.layout?.maxValue - miniWidget.value.options.layout?.minValue || 1
-    potentiometerValue.value =
-      ((newRotationAngle + 150) / rotationRange) * valueRange + miniWidget.value.options.layout?.minValue
+    const minVal = miniWidget.value.options.layout?.minValue || 0
+    const maxVal = miniWidget.value.options.layout?.maxValue || 100
+    const valueRange = maxVal - minVal
 
-    if (miniWidget.value.options.actionVariable) {
-      if (widgetStore.editingMode) return
-      widgetStore.setMiniWidgetLastValue(miniWidget.value.hash, Math.round(potentiometerValue.value))
-      setCockpitActionVariableData(miniWidget.value.options.actionVariable.name, Math.round(potentiometerValue.value))
+    potentiometerValue.value = ((newRotationAngle + 150) / rotationRange) * valueRange + minVal
+
+    if (miniWidget.value.options.dataLakeVariable) {
+      updateDataLakeVariable()
     }
   }
 
@@ -181,10 +259,55 @@ const startDrag = (event: MouseEvent): void => {
   document.addEventListener('mouseup', stopDrag)
 }
 
+const addDialValue = (): void => {
+  const maxVal = miniWidget.value.options.layout?.maxValue || 100
+  if (potentiometerValue.value < maxVal) {
+    setDialValue(potentiometerValue.value + 1)
+    updateDataLakeVariable()
+  }
+}
+
+const subtractDialValue = (): void => {
+  const minVal = miniWidget.value.options.layout?.minValue || 0
+  if (potentiometerValue.value > minVal) {
+    setDialValue(potentiometerValue.value - 1)
+    updateDataLakeVariable()
+  }
+}
+
+const startEditingValue = (): void => {
+  if (widgetStore.editingMode) return
+  isEditingValue.value = true
+
+  editableValue.value = String(Math.round(potentiometerValue.value) || 0)
+}
+
+const finishEditingValue = (): void => {
+  let newValue = parseFloat(editableValue.value)
+  if (isNaN(newValue)) {
+    newValue = Math.round(potentiometerValue.value) || 0
+  }
+  const minVal = miniWidget.value.options.layout?.minValue || 0
+  const maxVal = miniWidget.value.options.layout?.maxValue || 100
+
+  if (newValue > maxVal) newValue = maxVal
+  if (newValue < minVal) newValue = minVal
+
+  setDialValue(newValue)
+  if (miniWidget.value.options.dataLakeVariable && !widgetStore.editingMode) {
+    const roundedValue = Math.round(newValue)
+    widgetStore.setMiniWidgetLastValue(miniWidget.value.hash, roundedValue)
+    setDataLakeVariableData(miniWidget.value.options.dataLakeVariable.name, roundedValue)
+  }
+
+  isEditingValue.value = false
+}
+
 onUnmounted(() => {
-  if (miniWidget.value.options.actionVariable) {
-    unlistenCockpitActionVariable(miniWidget.value.options.actionVariable.name)
-    deleteCockpitActionVariable(miniWidget.value.options.actionVariable.id)
+  if (miniWidget.value.options.dataLakeVariable) {
+    if (listenerId) {
+      unlistenDataLakeVariable(miniWidget.value.options.dataLakeVariable.name, listenerId)
+    }
   }
 })
 </script>

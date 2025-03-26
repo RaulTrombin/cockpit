@@ -19,19 +19,14 @@
         margin: '1px',
       }"
     >
-      {{ miniWidget.options.text || 'Label' }}
+      {{ miniWidget.options.layout?.text || 'Label' }}
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, toRefs, watch } from 'vue'
+import { onMounted, toRefs, watch } from 'vue'
 
-import {
-  deleteCockpitActionVariable,
-  listenCockpitActionVariable,
-  unlistenCockpitActionVariable,
-} from '@/libs/actions/data-lake'
 import { useWidgetManagerStore } from '@/stores/widgetManager'
 import { CustomWidgetElementOptions, CustomWidgetElementType } from '@/types/widgets'
 
@@ -63,30 +58,16 @@ onMounted(() => {
   if (!props.miniWidget.options || Object.keys(props.miniWidget.options).length === 0) {
     miniWidget.value.isCustomElement = true
     widgetStore.updateElementOptions(props.miniWidget.hash, {
-      text: 'Label',
       layout: {
+        text: 'Label',
         textSize: 20,
         weight: 'normal',
         decoration: 'none',
         color: '#FFFFFF',
         align: 'center',
       },
-      variableType: 'string',
-      actionVariable: undefined,
+      variableType: null,
     })
-  }
-  if (props.miniWidget.options.actionVariable) {
-    listenCockpitActionVariable(props.miniWidget.options.actionVariable?.name, (value) => {
-      miniWidget.value.options.text = value as string
-    })
-    miniWidget.value.options.text = widgetStore.getMiniWidgetLastValue(miniWidget.value.hash) as string
-  }
-})
-
-onUnmounted(() => {
-  if (miniWidget.value.options.actionVariable) {
-    unlistenCockpitActionVariable(miniWidget.value.options.actionVariable.name)
-    deleteCockpitActionVariable(miniWidget.value.options.actionVariable.id)
   }
 })
 </script>

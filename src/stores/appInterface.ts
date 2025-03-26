@@ -1,11 +1,37 @@
 import { useWindowSize } from '@vueuse/core'
 import { defineStore } from 'pinia'
-import { watch } from 'vue'
+import { ref, watch } from 'vue'
 
 import { defaultDisplayUnitPreferences } from '@/assets/defaults'
 import { useBlueOsStorage } from '@/composables/settingsSyncer'
 
 const { width: windowWidth, height: windowHeight } = useWindowSize()
+
+/**
+ * Available sub menus names
+ */
+export enum SubMenuName {
+  settings = 'settings',
+  tools = 'tools',
+}
+
+/**
+ * Available sub menus names
+ */
+export enum SubMenuComponentName {
+  SettingsGeneral = 'settings-general',
+  SettingsInterface = 'settings-interface',
+  SettingsJoystick = 'settings-joystick',
+  SettingsVideo = 'settings-video',
+  SettingsTelemetry = 'settings-telemetry',
+  SettingsAlerts = 'settings-alerts',
+  SettingsDev = 'settings-dev',
+  SettingsMission = 'settings-mission',
+  SettingsActions = 'settings-actions',
+  SettingsDataLake = 'settings-datalake',
+  ToolsMAVLink = 'tools-mavlink',
+  ToolsDataLake = 'tools-datalake',
+}
 
 export const useAppInterfaceStore = defineStore('responsive', {
   state: () => ({
@@ -20,13 +46,16 @@ export const useAppInterfaceStore = defineStore('responsive', {
       blur: 25,
     }),
     displayUnitPreferences: useBlueOsStorage('cockpit-display-unit-preferences', defaultDisplayUnitPreferences),
-    mainMenuStyleTrigger: useBlueOsStorage('main-menu-style', 'center-left'),
+    mainMenuStyleTrigger: useBlueOsStorage('cockpit-main-menu-style', 'center-left'),
     componentToHighlight: 'none',
     isMainMenuVisible: false,
     mainMenuCurrentStep: 1,
-    configComponent: -1,
+    currentSubMenuName: ref<SubMenuName | null>(null),
+    currentSubMenuComponentName: ref<SubMenuComponentName | null>(null),
     isGlassModalAlwaysOnTop: false,
     isTutorialVisible: false,
+    userHasSeenTutorial: useBlueOsStorage('cockpit-has-seen-tutorial', false),
+    configPanelVisible: false,
   }),
   actions: {
     updateWidth() {
@@ -89,6 +118,7 @@ export const useAppInterfaceStore = defineStore('responsive', {
       boxShadow: '0px 4px 4px 0px #00000033, 0px 8px 12px 6px #00000016',
       animation: 'highlightBackground 0.5s alternate 20',
     }),
+    isConfigPanelVisible: (state) => state.configPanelVisible,
   },
 })
 

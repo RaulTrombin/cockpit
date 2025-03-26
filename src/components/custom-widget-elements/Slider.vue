@@ -9,7 +9,11 @@
     @click="widgetStore.editingMode && widgetStore.showElementPropsDrawer(miniWidget.hash)"
   >
     <div :style="{ minWidth: miniWidget.options.layout?.labelWidth + 'px' }">
-      <p v-if="miniWidget.options.layout?.label !== ''" class="mr-3 mb-[3px]">
+      <p
+        v-if="miniWidget.options.layout?.label !== ''"
+        :style="{ color: miniWidget.options.layout?.coloredLabel ? miniWidget.options.layout?.color : '#FFFFFF' }"
+        class="mr-3 mb-[3px]"
+      >
         {{ miniWidget.options.layout?.label }}
       </p>
     </div>
@@ -34,12 +38,7 @@
 import { toRefs } from '@vueuse/core'
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 
-import {
-  deleteCockpitActionVariable,
-  listenCockpitActionVariable,
-  setCockpitActionVariableData,
-  unlistenCockpitActionVariable,
-} from '@/libs/actions/data-lake'
+import { listenDataLakeVariable, setDataLakeVariableData, unlistenDataLakeVariable } from '@/libs/actions/data-lake'
 import { useWidgetManagerStore } from '@/stores/widgetManager'
 import { CustomWidgetElementOptions, CustomWidgetElementType } from '@/types/widgets'
 
@@ -55,6 +54,7 @@ const props = defineProps<{
 const miniWidget = toRefs(props).miniWidget
 
 const sliderValue = ref(0)
+let listenerId: string | undefined
 
 watch(
   () => widgetStore.miniWidgetManagerVars(miniWidget.value.hash).configMenuOpen,
@@ -69,11 +69,30 @@ watch(
   { immediate: true, deep: true }
 )
 
+const startListeningDataLakeVariable = (): void => {
+  if (miniWidget.value.options.dataLakeVariable) {
+    listenerId = listenDataLakeVariable(miniWidget.value.options.dataLakeVariable?.name, (value) => {
+      sliderValue.value = value as number
+    })
+    sliderValue.value = widgetStore.getMiniWidgetLastValue(miniWidget.value.hash) as number
+  }
+}
+
+watch(
+  () => miniWidget.value.options.dataLakeVariable?.name,
+  (newVal) => {
+    if (newVal) {
+      startListeningDataLakeVariable()
+    }
+  },
+  { immediate: true }
+)
+
 const handleSliderChange = (): void => {
   if (widgetStore.editingMode) return
-  if (miniWidget.value.options.actionVariable) {
+  if (miniWidget.value.options.dataLakeVariable) {
     widgetStore.setMiniWidgetLastValue(miniWidget.value.hash, sliderValue.value.toFixed(1))
-    setCockpitActionVariableData(miniWidget.value.options.actionVariable.name, sliderValue.value.toFixed(1))
+    setDataLakeVariableData(miniWidget.value.options.dataLakeVariable.name, sliderValue.value.toFixed(1))
   }
 }
 
@@ -87,24 +106,21 @@ onMounted(() => {
         maxValue: 100,
         showTooltip: true,
         color: '#FFFFFF',
+        coloredLabel: false,
         labelWidth: miniWidget.value.options.layout?.labelWidth || 0,
       },
       variableType: 'number',
-      actionVariable: undefined,
+      dataLakeVariable: undefined,
     })
   }
-  if (miniWidget.value.options.actionVariable) {
-    listenCockpitActionVariable(miniWidget.value.options.actionVariable?.name, (value) => {
-      sliderValue.value = value as number
-    })
-    sliderValue.value = widgetStore.getMiniWidgetLastValue(miniWidget.value.hash) as number
-  }
+  startListeningDataLakeVariable()
 })
 
 onUnmounted(() => {
-  if (miniWidget.value.options.actionVariable) {
-    unlistenCockpitActionVariable(miniWidget.value.options.actionVariable.name)
-    deleteCockpitActionVariable(miniWidget.value.options.actionVariable.id)
+  if (miniWidget.value.options.dataLakeVariable) {
+    if (listenerId) {
+      unlistenDataLakeVariable(miniWidget.value.options.dataLakeVariable.name, listenerId)
+    }
   }
 })
 </script>

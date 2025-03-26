@@ -27,12 +27,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, toRefs, watch } from 'vue'
 
-import {
-  deleteCockpitActionVariable,
-  listenCockpitActionVariable,
-  setCockpitActionVariableData,
-  unlistenCockpitActionVariable,
-} from '@/libs/actions/data-lake'
+import { listenDataLakeVariable, setDataLakeVariableData, unlistenDataLakeVariable } from '@/libs/actions/data-lake'
 import { useWidgetManagerStore } from '@/stores/widgetManager'
 import { CustomWidgetElementOptions, CustomWidgetElementType } from '@/types/widgets'
 
@@ -47,12 +42,13 @@ const props = defineProps<{
 
 const miniWidget = toRefs(props).miniWidget
 const isChecked = ref(false)
+let listenerId: string | undefined
 
 const handleToggleAction = (): void => {
   if (widgetStore.editingMode) return
   widgetStore.setMiniWidgetLastValue(miniWidget.value.hash, isChecked.value)
-  if (miniWidget.value.options.actionVariable) {
-    setCockpitActionVariableData(miniWidget.value.options.actionVariable.name, isChecked.value)
+  if (miniWidget.value.options.dataLakeVariable) {
+    setDataLakeVariableData(miniWidget.value.options.dataLakeVariable.name, isChecked.value)
   }
 }
 
@@ -69,6 +65,25 @@ watch(
   { immediate: true, deep: true }
 )
 
+const startListeningDataLakeVariable = (): void => {
+  if (miniWidget.value.options.dataLakeVariable) {
+    listenerId = listenDataLakeVariable(miniWidget.value.options.dataLakeVariable.name, (value) => {
+      isChecked.value = value as boolean
+    })
+    isChecked.value = widgetStore.getMiniWidgetLastValue(miniWidget.value.hash) as boolean
+  }
+}
+
+watch(
+  () => miniWidget.value.options.dataLakeVariable?.name,
+  (newVal) => {
+    if (newVal) {
+      startListeningDataLakeVariable()
+    }
+  },
+  { immediate: true }
+)
+
 onMounted(() => {
   if (!miniWidget.value.options || Object.keys(miniWidget.value.options).length === 0) {
     miniWidget.value.isCustomElement = true
@@ -79,21 +94,17 @@ onMounted(() => {
         color: '#FFFFFF',
       },
       variableType: 'boolean',
-      actionVariable: undefined,
+      dataLakeVariable: undefined,
     })
   }
-  if (miniWidget.value.options.actionVariable) {
-    listenCockpitActionVariable(miniWidget.value.options.actionVariable.name, (value) => {
-      isChecked.value = value as boolean
-    })
-    isChecked.value = widgetStore.getMiniWidgetLastValue(miniWidget.value.hash) as boolean
-  }
+  startListeningDataLakeVariable()
 })
 
 onUnmounted(() => {
-  if (miniWidget.value.options.actionVariable) {
-    unlistenCockpitActionVariable(miniWidget.value.options.actionVariable.name)
-    deleteCockpitActionVariable(miniWidget.value.options.actionVariable.id)
+  if (miniWidget.value.options.dataLakeVariable) {
+    if (listenerId) {
+      unlistenDataLakeVariable(miniWidget.value.options.dataLakeVariable.name, listenerId)
+    }
   }
 })
 </script>

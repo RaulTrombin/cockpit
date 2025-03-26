@@ -1,61 +1,89 @@
 <template>
   <div ref="mapBase" class="page-base" :class="widgetStore.editingMode ? 'pointer-events-none' : 'pointer-events-auto'">
     <div :id="mapId" ref="map" class="map">
-      <v-btn
-        v-if="showButtons"
-        v-tooltip="home ? 'Center map on home position.' : 'Home position is currently undefined.'"
-        class="absolute left-0 m-3 bottom-button bg-slate-50"
-        :class="!home ? 'active-events-on-disabled' : ''"
-        :color="followerTarget == WhoToFollow.HOME ? 'red' : ''"
-        elevation="2"
-        style="z-index: 1002; border-radius: 0px"
-        icon="mdi-home-map-marker"
-        size="x-small"
-        :disabled="!home"
-        @click.stop="targetFollower.goToTarget(WhoToFollow.HOME, true)"
-        @dblclick.stop="targetFollower.follow(WhoToFollow.HOME)"
-      />
+      <v-tooltip
+        location="top"
+        :text="home ? 'Center map on home position.' : 'Cannot center map on home (home position undefined).'"
+      >
+        <template #activator="{ props: tooltipProps }">
+          <v-btn
+            v-if="showButtons"
+            v-bind="tooltipProps"
+            class="absolute left-0 m-3 bottom-button bg-slate-50"
+            :class="!home ? 'active-events-on-disabled' : ''"
+            :color="followerTarget == WhoToFollow.HOME ? 'red' : ''"
+            elevation="2"
+            style="z-index: 1002; border-radius: 0px"
+            icon="mdi-home-map-marker"
+            size="x-small"
+            :disabled="!home"
+            @click.stop="targetFollower.goToTarget(WhoToFollow.HOME, true)"
+            @dblclick.stop="targetFollower.follow(WhoToFollow.HOME)"
+          />
+        </template>
+      </v-tooltip>
 
-      <v-btn
-        v-if="showButtons"
-        v-tooltip="vehiclePosition ? 'Center map on vehicle position.' : 'Vehicle position is currently undefined.'"
-        class="absolute m-3 bottom-button left-10 bg-slate-50"
-        :class="!vehiclePosition ? 'active-events-on-disabled' : ''"
-        :color="followerTarget == WhoToFollow.VEHICLE ? 'red' : ''"
-        elevation="2"
-        style="z-index: 1002; border-radius: 0px"
-        icon="mdi-airplane-marker"
-        size="x-small"
-        :disabled="!vehiclePosition"
-        @click.stop="targetFollower.goToTarget(WhoToFollow.VEHICLE, true)"
-        @dblclick.stop="targetFollower.follow(WhoToFollow.VEHICLE)"
-      />
+      <v-tooltip
+        location="top"
+        :text="vehiclePosition ? 'Center map on vehicle position.' : 'Cannot center map on vehicle (vehicle offline).'"
+      >
+        <template #activator="{ props: tooltipProps }">
+          <v-btn
+            v-if="showButtons"
+            v-bind="tooltipProps"
+            class="absolute m-3 bottom-button left-10 bg-slate-50"
+            :class="!vehiclePosition ? 'active-events-on-disabled' : ''"
+            :color="followerTarget == WhoToFollow.VEHICLE ? 'red' : ''"
+            elevation="2"
+            style="z-index: 1002; border-radius: 0px"
+            icon="mdi-airplane-marker"
+            size="x-small"
+            :disabled="!vehiclePosition"
+            @click.stop="targetFollower.goToTarget(WhoToFollow.VEHICLE, true)"
+            @dblclick.stop="targetFollower.follow(WhoToFollow.VEHICLE)"
+          />
+        </template>
+      </v-tooltip>
 
-      <v-btn
-        v-if="showButtons"
-        class="absolute m-3 bottom-button left-20 bg-slate-50"
-        elevation="2"
-        style="z-index: 1002; border-radius: 0px"
-        icon="mdi-download"
-        size="x-small"
-        @click.stop="downloadMissionFromVehicle"
-      />
-
-      <v-btn
-        v-if="showButtons"
-        class="absolute mb-3 ml-1 bottom-button left-32 bg-slate-50"
-        elevation="2"
-        style="z-index: 1002; border-radius: 0px"
-        icon="mdi-play"
-        size="x-small"
-        @click.stop="executeMissionOnVehicle"
-      />
+      <v-tooltip location="top" :text="vehicleDownloadMissionButtonTooltipText">
+        <template #activator="{ props: tooltipProps }">
+          <v-btn
+            v-if="showButtons"
+            v-bind="tooltipProps"
+            class="absolute m-3 bottom-button left-20 bg-slate-50"
+            :class="!vehicleStore.isVehicleOnline ? 'active-events-on-disabled' : ''"
+            :disabled="!vehicleStore.isVehicleOnline"
+            elevation="2"
+            style="z-index: 1002; border-radius: 0px"
+            icon="mdi-download"
+            size="x-small"
+            @click.stop="downloadMissionFromVehicle"
+          />
+        </template>
+      </v-tooltip>
+      <v-tooltip location="top" :text="vehicleExecuteMissionButtonTooltipText">
+        <template #activator="{ props: tooltipProps }">
+          <v-btn
+            v-if="showButtons"
+            v-bind="tooltipProps"
+            class="absolute mb-3 ml-1 bottom-button left-32 bg-slate-50"
+            :class="!vehicleStore.isVehicleOnline ? 'active-events-on-disabled' : ''"
+            :disabled="!vehicleStore.isVehicleOnline"
+            elevation="2"
+            style="z-index: 1002; border-radius: 0px"
+            icon="mdi-play"
+            size="x-small"
+            @click.stop="executeMissionOnVehicle"
+          />
+        </template>
+      </v-tooltip>
     </div>
   </div>
 
   <div v-if="showContextMenu" class="context-menu" :style="{ top: menuPosition.top, left: menuPosition.left }">
     <ul @click.stop="">
       <li @click="onMenuOptionSelect('goto')">GoTo</li>
+      <li @click="onMenuOptionSelect('set-default-map-position')">Set default map position</li>
     </ul>
   </div>
 
@@ -128,8 +156,8 @@ const missionStore = useMissionStore()
 
 // Declare the general variables
 const map: Ref<Map | undefined> = ref()
-const zoom = ref(15)
-const mapCenter = ref<WaypointCoordinates>([-27.5935, -48.55854])
+const zoom = ref(missionStore.defaultMapZoom)
+const mapCenter = ref<WaypointCoordinates>(missionStore.defaultMapCenter)
 const home = ref()
 const mapId = computed(() => `map-${widget.value.hash}`)
 const showButtons = ref(false)
@@ -523,7 +551,9 @@ const onMenuOptionSelect = (option: string): void => {
       }
       break
 
-    // Add more cases for other options if needed in the future
+    case 'set-default-map-position':
+      missionStore.setDefaultMapPosition(mapCenter.value, zoom.value)
+      break
 
     default:
       console.warn('Unknown menu option selected:', option)
@@ -590,9 +620,21 @@ const bottomButtonsDisplacement = computed(() => {
 const topProgressBarDisplacement = computed(() => {
   return `${Math.max(-widgetStore.widgetClearanceForVisibleArea(widget.value).top, 0)}px`
 })
+
+const vehicleDownloadMissionButtonTooltipText = computed(() => {
+  return vehicleStore.isVehicleOnline
+    ? 'Download the mission that is stored in the vehicle.'
+    : 'Vehicle offline (cannot download mission).'
+})
+
+const vehicleExecuteMissionButtonTooltipText = computed(() => {
+  return vehicleStore.isVehicleOnline
+    ? 'Execute the mission that is stored in the vehicle.'
+    : 'Vehicle offline (cannot execute mission).'
+})
 </script>
 
-<style>
+<style scoped>
 .page-base {
   min-height: 100vh;
   display: flex;

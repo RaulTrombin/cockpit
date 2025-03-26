@@ -33,16 +33,12 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, toRefs, watch } from 'vue'
 
-import {
-  deleteCockpitActionVariable,
-  listenCockpitActionVariable,
-  setCockpitActionVariableData,
-  unlistenCockpitActionVariable,
-} from '@/libs/actions/data-lake'
+import { listenDataLakeVariable, setDataLakeVariableData, unlistenDataLakeVariable } from '@/libs/actions/data-lake'
 import { useWidgetManagerStore } from '@/stores/widgetManager'
 import { CustomWidgetElementOptions, CustomWidgetElementType, SelectorOption } from '@/types/widgets'
 
 const widgetStore = useWidgetManagerStore()
+let listenerId: string | undefined
 
 const props = defineProps<{
   /**
@@ -92,11 +88,30 @@ const handleSelection = (value: string | number | boolean): void => {
 
   selectedValue.value = value
 
-  if (miniWidget.value.options.actionVariable) {
-    setCockpitActionVariableData(miniWidget.value.options.actionVariable.id, value)
+  if (miniWidget.value.options.dataLakeVariable) {
+    setDataLakeVariableData(miniWidget.value.options.dataLakeVariable.id, value)
   }
   widgetStore.setMiniWidgetLastValue(miniWidget.value.hash, selected.value)
 }
+
+const startListeningDataLakeVariable = (): void => {
+  if (miniWidget.value.options.dataLakeVariable) {
+    listenerId = listenDataLakeVariable(miniWidget.value.options.dataLakeVariable.name, (value) => {
+      selectedValue.value = value as string
+    })
+    selectedValue.value = widgetStore.getMiniWidgetLastValue(miniWidget.value.hash) as string
+  }
+}
+
+watch(
+  () => miniWidget.value.options.dataLakeVariable?.name,
+  (newVal) => {
+    if (newVal) {
+      startListeningDataLakeVariable()
+    }
+  },
+  { immediate: true }
+)
 
 onMounted(() => {
   if (!miniWidget.value.options || Object.keys(miniWidget.value.options).length === 0) {
@@ -108,15 +123,11 @@ onMounted(() => {
         width: 168,
       },
       variableType: 'string',
-      actionVariable: undefined,
+      dataLakeVariable: undefined,
     })
   }
-  if (miniWidget.value.options.actionVariable) {
-    listenCockpitActionVariable(miniWidget.value.options.actionVariable.name, (value) => {
-      selectedOption.value = options.value.find((option) => option.value === value)
-    })
-    const storedValue = widgetStore.getMiniWidgetLastValue(miniWidget.value.hash)
-    selectedOption.value = options.value.find((option: SelectorOption) => option.value === storedValue)
+  if (miniWidget.value.options.dataLakeVariable) {
+    startListeningDataLakeVariable()
   }
   if (miniWidget.value.options.lastSelected?.name !== '') {
     selectedOption.value = miniWidget.value.options.lastSelected
@@ -124,9 +135,10 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  if (miniWidget.value.options.actionVariable) {
-    unlistenCockpitActionVariable(miniWidget.value.options.actionVariable.name)
-    deleteCockpitActionVariable(miniWidget.value.options.actionVariable.id)
+  if (miniWidget.value.options.dataLakeVariable) {
+    if (listenerId) {
+      unlistenDataLakeVariable(miniWidget.value.options.dataLakeVariable.name, listenerId)
+    }
   }
 })
 </script>

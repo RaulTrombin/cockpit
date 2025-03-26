@@ -3,6 +3,47 @@ import { CockpitAction } from '@/libs/joystick/protocols/cockpit-actions'
 import type { Point2D, SizeRect2D } from './general'
 
 /**
+ * Widget configuration object as received from BlueOS or another external source
+ */
+export interface ExternalWidgetSetupInfo {
+  /**
+   * Name of the widget, this is displayed on edit mode widget browser
+   */
+  name: string
+  /**
+   * The URL at which the widget is located
+   * This is expected to be an absolute url
+   */
+  iframe_url: string
+
+  /**
+   * The icon of the widget, this is displayed on the widget browser
+   */
+  iframe_icon: string
+}
+
+/**
+ * Internal data used for setting up a new widget. This includes WidgetType, a custom name, options, and icon
+ */ export interface InternalWidgetSetupInfo {
+  /**
+   *  Widget type
+   */
+  component: WidgetType
+  /**
+   *  Widget name, this will be displayed on edit mode
+   */
+  name: string
+  /**
+   *  Widget options, this is the configuration that will be passed to the widget when it is created
+   */
+  options: Record<string, unknown>
+  /**
+   *  Widget icon, this is the icon that will be displayed on the widget browser
+   */
+  icon: string
+}
+
+/**
  * Available components to be used in the Widget system
  * The enum value is equal to the component's filename, without the '.vue' extension
  */
@@ -10,8 +51,9 @@ export enum WidgetType {
   Attitude = 'Attitude',
   Compass = 'Compass',
   CompassHUD = 'CompassHUD',
-  CustomWidgetBase = 'CustomWidgetBase',
+  CollapsibleContainer = 'CollapsibleContainer',
   DepthHUD = 'DepthHUD',
+  DoItYourself = 'DoItYourself',
   IFrame = 'IFrame',
   ImageView = 'ImageView',
   Map = 'Map',
@@ -33,6 +75,8 @@ export enum MiniWidgetType {
   BatteryIndicator = 'BatteryIndicator',
   ChangeAltitudeCommander = 'ChangeAltitudeCommander',
   Clock = 'Clock',
+  GoFullScreen = 'GoFullScreen',
+  EnterEditMode = 'EnterEditMode',
   DepthIndicator = 'DepthIndicator',
   MissionIdentifier = 'MissionIdentifier',
   RelativeAltitudeIndicator = 'RelativeAltitudeIndicator',
@@ -99,7 +143,7 @@ export type SelectorOption = {
 /**
  * Options for the Cockpit Actions parameters
  */
-export interface CockpitActionVariable {
+export interface DataLakeVariable {
   /**
    * Parameter ID, equals to initial name of the parameter
    */
@@ -145,19 +189,19 @@ export type CustomWidgetElementOptions = {
       /**
        * Variable type
        */
-      variableType: 'string' | 'boolean' | 'number'
+      variableType: DataLakeVariable | null
       /**
        * Action parameter
        */
-      actionVariable: CockpitActionVariable
-      /**
-       * The label text
-       */
-      text: string
+      dataLakeVariable: DataLakeVariable
       /**
        * Layout options
        */
       layout: {
+        /**
+         * The label text
+         */
+        text: string
         /**
          * The size of the label's font (in pixels)
          */
@@ -204,7 +248,7 @@ export type CustomWidgetElementOptions = {
       /**
        * Variable type
        */
-      variableType: 'string' | 'boolean' | 'number'
+      variableType: DataLakeVariable['type'] | null
       /**
        * Action parameter
        */
@@ -263,11 +307,11 @@ export type CustomWidgetElementOptions = {
       /**
        * Variable type
        */
-      variableType: 'string' | 'boolean' | 'number'
+      variableType: DataLakeVariable['type'] | null
       /**
        * Action parameter
        */
-      actionVariable: CockpitActionVariable
+      dataLakeVariable: DataLakeVariable
       /**
        * Layout props for the element
        */
@@ -310,11 +354,11 @@ export type CustomWidgetElementOptions = {
       /**
        * Variable type
        */
-      variableType: 'string' | 'boolean' | 'number'
+      variableType: DataLakeVariable['type'] | null
       /**
        * Action parameter
        */
-      actionVariable: CockpitActionVariable
+      dataLakeVariable: DataLakeVariable
       /**
        * Layout options
        */
@@ -373,11 +417,11 @@ export type CustomWidgetElementOptions = {
       /**
        * Variable type
        */
-      variableType: 'string' | 'boolean' | 'number'
+      variableType: DataLakeVariable['type'] | null
       /**
        * Action parameter
        */
-      actionVariable: CockpitActionVariable
+      dataLakeVariable: DataLakeVariable
       /**
        * Last selected value
        */
@@ -424,11 +468,11 @@ export type CustomWidgetElementOptions = {
       /**
        * Variable type
        */
-      variableType: 'string' | 'boolean' | 'number'
+      variableType: DataLakeVariable['type'] | null
       /**
        * Action parameter
        */
-      actionVariable: CockpitActionVariable
+      dataLakeVariable: DataLakeVariable
       /**
        * Layout options
        */
@@ -445,6 +489,10 @@ export type CustomWidgetElementOptions = {
          * The color of the slider
          */
         color: string
+        /**
+         * Apply color to the label
+         */
+        coloredLabel: boolean
         /**
          * The minimum value of the slider
          */
@@ -491,11 +539,11 @@ export type CustomWidgetElementOptions = {
       /**
        * Variable type
        */
-      variableType: 'string' | 'boolean' | 'number'
+      variableType: DataLakeVariable['type'] | null
       /**
        * Action parameter
        */
-      actionVariable: CockpitActionVariable
+      dataLakeVariable: DataLakeVariable
       /**
        * Layout options
        */
@@ -763,6 +811,44 @@ export type Profile = {
    * Editable name for the profile
    */
   name: string
+}
+
+export const isWidgetConfigurable: Record<WidgetType, boolean> = {
+  [WidgetType.Attitude]: true,
+  [WidgetType.Compass]: true,
+  [WidgetType.CompassHUD]: true,
+  [WidgetType.CollapsibleContainer]: true,
+  [WidgetType.DepthHUD]: true,
+  [WidgetType.DoItYourself]: true,
+  [WidgetType.IFrame]: true,
+  [WidgetType.ImageView]: true,
+  [WidgetType.Map]: true,
+  [WidgetType.MiniWidgetsBar]: false,
+  [WidgetType.Plotter]: true,
+  [WidgetType.URLVideoPlayer]: true,
+  [WidgetType.VideoPlayer]: true,
+  [WidgetType.VirtualHorizon]: false,
+}
+
+export const isMiniWidgetConfigurable: Record<MiniWidgetType, boolean> = {
+  [MiniWidgetType.Alerter]: false,
+  [MiniWidgetType.ArmerButton]: false,
+  [MiniWidgetType.BaseCommIndicator]: false,
+  [MiniWidgetType.BatteryIndicator]: true,
+  [MiniWidgetType.ChangeAltitudeCommander]: false,
+  [MiniWidgetType.Clock]: false,
+  [MiniWidgetType.GoFullScreen]: false,
+  [MiniWidgetType.EnterEditMode]: false,
+  [MiniWidgetType.DepthIndicator]: false,
+  [MiniWidgetType.MissionIdentifier]: true,
+  [MiniWidgetType.RelativeAltitudeIndicator]: false,
+  [MiniWidgetType.TakeoffLandCommander]: false,
+  [MiniWidgetType.VeryGenericIndicator]: true,
+  [MiniWidgetType.JoystickCommIndicator]: true,
+  [MiniWidgetType.MiniVideoRecorder]: true,
+  [MiniWidgetType.ModeSelector]: false,
+  [MiniWidgetType.SatelliteIndicator]: false,
+  [MiniWidgetType.ViewSelector]: false,
 }
 
 export const validateWidget = (maybeWidget: Widget): maybeWidget is Widget => {

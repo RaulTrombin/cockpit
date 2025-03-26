@@ -25,12 +25,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, toRefs, watch } from 'vue'
 
-import {
-  deleteCockpitActionVariable,
-  listenCockpitActionVariable,
-  setCockpitActionVariableData,
-  unlistenCockpitActionVariable,
-} from '@/libs/actions/data-lake'
+import { listenDataLakeVariable, setDataLakeVariableData, unlistenDataLakeVariable } from '@/libs/actions/data-lake'
 import { useWidgetManagerStore } from '@/stores/widgetManager'
 import { CustomWidgetElementOptions, CustomWidgetElementType } from '@/types/widgets'
 
@@ -45,6 +40,7 @@ const props = defineProps<{
 
 const miniWidget = toRefs(props).miniWidget
 const switchValue = ref(true)
+let listenerId: string | undefined
 
 watch(
   () => widgetStore.miniWidgetManagerVars(miniWidget.value.hash).configMenuOpen,
@@ -59,11 +55,30 @@ watch(
   { immediate: true, deep: true }
 )
 
+const startListeningDataLakeVariable = (): void => {
+  if (miniWidget.value.options.dataLakeVariable) {
+    listenerId = listenDataLakeVariable(miniWidget.value.options.dataLakeVariable.name, (value) => {
+      switchValue.value = value as boolean
+    })
+    switchValue.value = widgetStore.getMiniWidgetLastValue(miniWidget.value.hash) as boolean
+  }
+}
+
+watch(
+  () => miniWidget.value.options.dataLakeVariable?.name,
+  (newVal) => {
+    if (newVal) {
+      startListeningDataLakeVariable()
+    }
+  },
+  { immediate: true }
+)
+
 const handleToggleAction = (): void => {
   if (widgetStore.editingMode) return
-  if (miniWidget.value.options.actionVariable) {
+  if (miniWidget.value.options.dataLakeVariable) {
     widgetStore.setMiniWidgetLastValue(miniWidget.value.hash, switchValue.value)
-    setCockpitActionVariableData(miniWidget.value.options.actionVariable.name, switchValue.value)
+    setDataLakeVariableData(miniWidget.value.options.dataLakeVariable.name, switchValue.value)
   }
 }
 
@@ -77,23 +92,20 @@ onMounted(() => {
         label: miniWidget.value.options.layout?.label || '',
       },
       variableType: 'boolean',
-      actionVariable: undefined,
+      dataLakeVariable: undefined,
       toggled: true,
     })
 
     switchValue.value = true
-  } else if (miniWidget.value.options.actionVariable) {
-    listenCockpitActionVariable(miniWidget.value.options.actionVariable.name, (value) => {
-      switchValue.value = value as boolean
-    })
-    switchValue.value = widgetStore.getMiniWidgetLastValue(miniWidget.value.hash) as boolean
   }
+  startListeningDataLakeVariable()
 })
 
 onUnmounted(() => {
-  if (miniWidget.value.options.actionVariable) {
-    unlistenCockpitActionVariable(miniWidget.value.options.actionVariable.name)
-    deleteCockpitActionVariable(miniWidget.value.options.actionVariable.id)
+  if (miniWidget.value.options.dataLakeVariable) {
+    if (listenerId) {
+      unlistenDataLakeVariable(miniWidget.value.options.dataLakeVariable.name, listenerId)
+    }
   }
 })
 </script>

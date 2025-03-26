@@ -1,5 +1,3 @@
-import { GamepadListener } from 'gamepad.js'
-
 /**
  * Possible events from GamepadListener
  * https://developer.mozilla.org/en-US/docs/Web/API/Gamepad_API/Using_the_Gamepad_API
@@ -73,18 +71,6 @@ export namespace EventType {
 
     return EventType.Unknown
   }
-}
-
-// From GamePad API
-type GamepadEvent = {
-  /**
-   * Event name
-   */
-  type: string
-  /**
-   * Generic object that describes event
-   */
-  detail: unknown
 }
 
 // Encapsulate joystick event values
@@ -171,7 +157,7 @@ export type JoystickButtonEvent = {
   }
 }
 
-export type JoysticConnectEvent = {
+export type JoystickConnectEvent = {
   /**
    * Event type
    */
@@ -191,7 +177,7 @@ export type JoysticConnectEvent = {
   }
 }
 
-export type JoysticDisconnectEvent = {
+export type JoystickDisconnectEvent = {
   /**
    * Event type
    */
@@ -207,10 +193,24 @@ export type JoysticDisconnectEvent = {
   }
 }
 
-export type JoystickEvent = JoystickAxisEvent | JoystickButtonEvent | JoysticConnectEvent | JoysticDisconnectEvent
+export type GamepadState = {
+  /**
+   * Gamepad axes state
+   */
+  axes: number[]
+  /**
+   * Gamepad buttons state
+   */
+  buttons: GamepadButton[]
+}
 
-type callbackJoystickStateEventType = (event: JoystickEvent) => void
-type callbackJoystickEventType = (event: Map<number, Gamepad>) => void
+export type JoysticksMap = Map<number, Gamepad>
+
+export type JoystickConnectionEvent = JoystickConnectEvent | JoystickDisconnectEvent
+export type JoystickStateEvent = JoystickAxisEvent | JoystickButtonEvent
+
+type CallbackJoystickStateEventType = (event: JoystickStateEvent) => void
+type CallbackJoystickConnectionEventType = (event: JoysticksMap) => void
 
 /**
  * Joystick Manager
@@ -219,19 +219,20 @@ type callbackJoystickEventType = (event: Map<number, Gamepad>) => void
 class JoystickManager {
   private static instance = new JoystickManager()
 
-  private callbacksJoystick: Array<callbackJoystickEventType> = []
-  private callbacksJoystickState: Array<callbackJoystickStateEventType> = []
-  private gamepadListener = new GamepadListener()
-  private joysticks: Map<number, Gamepad> = new Map()
-  // We need to safe in settings
+  private callbacksJoystickConnection: Array<CallbackJoystickConnectionEventType> = []
+  private callbacksJoystickState: Array<CallbackJoystickStateEventType> = []
+  private joysticks: JoysticksMap = new Map()
   private enabledJoysticks: Array<string> = []
+  private animationFrameId: number | null = null
+  private previousGamepadState: Map<number, GamepadState> = new Map()
+  private lastTimeGamepadConnectionsPolled = 0
+  private currentGamepadsConnections: Array<Gamepad> = []
 
   /**
    * Singleton constructor
    */
   private constructor() {
-    this.gamepadListener.start()
-    this.connectEvents()
+    this.start()
   }
 
   /**
@@ -243,11 +244,11 @@ class JoystickManager {
   }
 
   /**
-   * Callback to be used and receive joystick updates
-   * @param {callbackJoystickEventType} callback
+   * Callback to be used and receive joystick connection updates
+   * @param {JoysticksMap} callback
    */
-  onJoystickUpdate(callback: callbackJoystickEventType): void {
-    this.callbacksJoystick.push(callback)
+  onJoystickConnectionUpdate(callback: CallbackJoystickConnectionEventType): void {
+    this.callbacksJoystickConnection.push(callback)
   }
 
   /**
@@ -255,7 +256,7 @@ class JoystickManager {
    * @param {Gamepad} gamepad Object
    * @returns {'vendor_id: string | undefined, product_id: string | undefined'} VID and PID
    */
-  private getVidPid(gamepad: Gamepad): {
+  getVidPid(gamepad: Gamepad): {
     vendor_id: string | undefined // eslint-disable-line
     product_id: string | undefined // eslint-disable-line
   } {
@@ -282,55 +283,16 @@ class JoystickManager {
   }
 
   /**
-   * Request user for joystick HID access
-   * @param {Gamepad} gamepad object
-   */
-  private getHID(gamepad: Gamepad): void {
-    // The objective of this function is to get serial information and track the configuration
-    // for a specific joystick, including calibration.
-    // Electron API appears to be not working: https://www.electronjs.org/docs/latest/api/structures/hid-device
-    // W3C productName may help but it's not working: https://wicg.github.io/webhid/
-    // For both serialInformation is not available: https://github.com/w3c/gamepad/issues/73
-    const { vendor_id, product_id } = this.getVidPid(gamepad)
-
-    console.debug(`Joystick: ${gamepad.id} (${vendor_id}:${product_id})`)
-
-    if (vendor_id == undefined || product_id == undefined) {
-      return
-    }
-
-    // Enable joysticks to be used
-    // Needs to be more adopted by the browsers
-    /*
-    navigator.hid
-      .requestDevice({
-        filters: [
-          {
-            vendorId: parseInt(vendor_id, 16),
-            productID: parseInt(product_id, 16),
-          },
-        ],
-      })
-      .then((devices: Array<string>) => {
-        if (devices.length != 0) {
-          this.enabledJoysticks.push(joystick_information)
-        }
-      })
-    */
-  }
-
-  /**
    * Process joystick event internally
-   * @param {JoystickEvent} event
+   * @param {JoystickConnectionEvent} event
    */
-  private processJoystickUpdate(event: JoystickEvent): void {
+  private processJoystickConnectionUpdate(event: JoystickConnectionEvent): void {
     const index = event.detail.index
 
     if (event.type == EventType.Connected) {
       const gamepad = event.detail.gamepad
 
       if (!this.joysticks.has(index)) {
-        this.getHID(gamepad)
         this.enabledJoysticks.push(gamepad.id)
       }
       this.joysticks.set(index, gamepad)
@@ -339,7 +301,7 @@ class JoystickManager {
       this.joysticks.delete(index)
     }
 
-    for (const callback of this.callbacksJoystick) {
+    for (const callback of this.callbacksJoystickConnection) {
       callback(this.joysticks)
     }
   }
@@ -348,36 +310,162 @@ class JoystickManager {
    * Register joystick event callback
    * @param {callbackJoystickStateEventType} callback
    */
-  onJoystickStateUpdate(callback: callbackJoystickStateEventType): void {
+  onJoystickStateUpdate(callback: CallbackJoystickStateEventType): void {
     this.callbacksJoystickState.push(callback)
   }
 
   /**
-   * Connect necessary events with callbacks
+   * Poll for gamepad connections and disconnection every 500ms, and activates polling the gamepad states.
+   * The polling for connections and disconnections is a workaround to get around the fact that the gamepad API events do not work the same way in all browsers.
+   * In Chrome, for example, the gamepadconnected event is sometimes not fired when a gamepad is connected after a long time since the page was loaded.
+   * This is a workaround to get around this issue.
    */
-  private connectEvents(): void {
-    for (const name of EventType.events()) {
-      this.gamepadListener.on(`gamepad:${name}`, (event: GamepadEvent) => {
-        const joystickEvent = event as JoystickEvent
-        const typeEnum = EventType.fromGamepadEventType(joystickEvent.type)
+  private start(): void {
+    // Start polling for gamepad connections and disconnections
+    this.updateGamepadsConnections()
 
-        if (typeEnum === EventType.Unknown) return
-        joystickEvent.type = typeEnum
+    // Start polling for gamepad states
+    this.pollGamepadsStates()
+  }
 
-        if (joystickEvent.type === EventType.Connected || joystickEvent.type === EventType.Disconnected) {
-          this.processJoystickUpdate(joystickEvent)
-          return
+  /**
+   * Handle gamepad connection event
+   * @param {Gamepad} gamepad - Gamepad connection event
+   */
+  private handleGamepadConnected(gamepad: Gamepad): void {
+    const joystickEvent: JoystickConnectEvent = {
+      type: EventType.Connected,
+      detail: {
+        index: gamepad.index,
+        gamepad: gamepad,
+      },
+    }
+    this.processJoystickConnectionUpdate(joystickEvent)
+  }
+
+  /**
+   * Handle gamepad disconnection event
+   * @param {Gamepad} gamepad - Gamepad disconnection event
+   */
+  private handleGamepadDisconnected(gamepad: Gamepad): void {
+    const joystickEvent: JoystickDisconnectEvent = {
+      type: EventType.Disconnected,
+      detail: {
+        index: gamepad.index,
+      },
+    }
+    this.processJoystickConnectionUpdate(joystickEvent)
+  }
+
+  /**
+   * Update gamepad connections
+   */
+  private updateGamepadsConnections(): void {
+    // Poll for gamepad connections and disconnections every 500ms
+    if (Date.now() - this.lastTimeGamepadConnectionsPolled > 500) {
+      const gamepadConnectionsState = navigator.getGamepads()
+
+      // Add new gamepads to the list
+      for (const gamepad of gamepadConnectionsState) {
+        if (gamepad && !this.currentGamepadsConnections.map((g) => g.index).includes(gamepad.index)) {
+          this.currentGamepadsConnections.push(gamepad)
+          this.handleGamepadConnected(gamepad)
         }
+      }
 
-        if (!this.enabledJoysticks.includes(joystickEvent.detail.gamepad.id)) {
-          console.warn(`Joystick is not enabled: ${joystickEvent.detail.gamepad.id}`)
-          return
+      // Remove gamepads that are not connected anymore
+      for (const gamepad of this.currentGamepadsConnections) {
+        if (!gamepadConnectionsState.map((g) => g?.index).includes(gamepad.index)) {
+          this.currentGamepadsConnections.splice(this.currentGamepadsConnections.indexOf(gamepad), 1)
+          this.handleGamepadDisconnected(gamepad)
         }
+      }
+      this.lastTimeGamepadConnectionsPolled = Date.now()
+    }
+    this.animationFrameId = requestAnimationFrame(() => this.updateGamepadsConnections())
+  }
 
-        for (const callback of this.callbacksJoystickState) {
-          callback(joystickEvent)
-        }
+  /**
+   * Poll for gamepad state changes
+   */
+  private pollGamepadsStates(): void {
+    const gamepads = navigator.getGamepads()
+
+    for (const gamepad of gamepads) {
+      if (!gamepad) continue
+
+      const previousState = this.previousGamepadState.get(gamepad.index)
+
+      // Check axes
+      if (previousState) {
+        // Check for axis changes
+        gamepad.axes.forEach((value, index) => {
+          if (previousState.axes[index] !== value) {
+            const stick = Math.floor(index / 2)
+            const axis = index % 2
+            const joystickEvent: JoystickAxisEvent = {
+              type: EventType.Axis,
+              detail: {
+                index: gamepad.index,
+                gamepad: gamepad,
+                stick: stick as JoystickDetail.Stick,
+                axis: axis as JoystickDetail.Axis,
+                value: value,
+              },
+            }
+            this.emitStateEvent(joystickEvent)
+          }
+        })
+
+        // Check for button changes
+        gamepad.buttons.forEach((button, index) => {
+          const previousButton = previousState.buttons[index]
+          if (previousButton.pressed !== button.pressed || previousButton.value !== button.value) {
+            const joystickEvent: JoystickButtonEvent = {
+              type: EventType.Button,
+              detail: {
+                index: gamepad.index,
+                gamepad: gamepad,
+                button: index,
+                pressed: button.pressed,
+                value: button.value,
+              },
+            }
+            this.emitStateEvent(joystickEvent)
+          }
+        })
+      }
+
+      // Update previous state
+      this.previousGamepadState.set(gamepad.index, {
+        axes: [...gamepad.axes],
+        buttons: [...gamepad.buttons],
       })
+    }
+
+    // Continue polling
+    this.animationFrameId = requestAnimationFrame(() => this.pollGamepadsStates())
+  }
+
+  /**
+   * Emit state event to registered callbacks
+   * @param {JoystickStateEvent} joystickEvent - The event to emit
+   */
+  private emitStateEvent(joystickEvent: JoystickStateEvent): void {
+    if (!this.enabledJoysticks.includes(joystickEvent.detail.gamepad.id)) return
+
+    for (const callback of this.callbacksJoystickState) {
+      callback(joystickEvent)
+    }
+  }
+
+  /**
+   * Stop polling for gamepad events
+   */
+  stop(): void {
+    if (this.animationFrameId !== null) {
+      cancelAnimationFrame(this.animationFrameId)
+      this.animationFrameId = null
     }
   }
 }
